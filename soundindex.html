@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音の大きさ測定 | 電離度と電子オルゴール</title>
+<style>
+:root{--bg:#e8edf1;--panel:#f6f8fa;--ink:#14212b;--sub:#53646f;--line:#c5d0d8;--acc:#0f7b8a;--hot:#b4410b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",system-ui,sans-serif;line-height:1.6}
+main{max-width:960px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:1.35rem;margin:0 0 4px}
+h2{font-size:1rem;margin:0 0 12px}
+.lead{margin:0 0 20px;color:var(--sub);font-size:.92rem}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px;margin-bottom:16px}
+.meter{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.num{font-size:clamp(3.6rem,15vw,7rem);font-weight:700;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.02em;min-width:3.4ch}
+.num.rec{color:var(--acc)}
+.unit{color:var(--sub);font-size:1.1rem}
+.status{margin-left:auto;color:var(--sub);font-size:.9rem}
+canvas{width:100%;height:150px;display:block;margin-top:14px;border-top:1px solid var(--line);padding-top:8px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
+label{display:flex;flex-direction:column;font-size:.82rem;color:var(--sub);gap:4px}
+input,select{font:inherit;color:var(--ink);padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;min-height:40px}
+input[type=text]{width:220px;max-width:100%}
+input[type=number]{width:90px}
+button{font:inherit;min-height:40px;padding:8px 16px;border-radius:4px;border:1px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
+button.main{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:700}
+button.small{min-height:30px;padding:2px 10px;font-size:.82rem}
+button:disabled,select:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f0b429;outline-offset:2px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin-bottom:6px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--sub);font-weight:600;font-size:.8rem;white-space:nowrap}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar{height:10px;background:var(--acc);border-radius:2px;min-width:2px}
+.empty{color:var(--sub);font-size:.9rem;margin:0}
+.err{color:var(--hot);font-weight:600;margin:10px 0 0}
+.note{color:var(--sub);font-size:.84rem;margin:12px 0 0}
+.tools{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.base{margin:0 0 12px}
+h3{font-size:.9rem;margin:18px 0 6px}
+</style>
+</head>
+<body>
+<main>
+  <h1>音の大きさ測定</h1>
+  <p class="lead">電離度を変えたときの電子オルゴールの音を、マイクで数値にして比べます。</p>
+
+  <section class="panel">
+    <div class="meter">
+      <span class="num" id="now">--</span><span class="unit">dB(相対)</span>
+      <span class="status" id="status">マイク未接続</span>
+    </div>
+    <canvas id="cv" aria-label="音の大きさの時間変化"></canvas>
+    <div class="tools">
+      <button class="main" id="start">マイクを開始</button>
+    </div>
+    <p class="err" id="err" hidden></p>
+  </section>
+
+  <section class="panel">
+    <h2>測定する</h2>
+    <div class="row">
+      <label>条件の名前
+        <input type="text" id="label" placeholder="例: 無音 / 酢酸 0.1 mol/L">
+      </label>
+      <label>測定時間
+        <select id="dur">
+          <option value="5">5 秒</option>
+          <option value="10" selected>10 秒</option>
+          <option value="20">20 秒</option>
+          <option value="30">30 秒</option>
+        </select>
+      </label>
+      <label>雑音のカット
+        <select id="hp">
+          <option value="20">なし(全帯域)</option>
+          <option value="500" selected>500 Hz 未満をカット</option>
+          <option value="1000">1000 Hz 未満をカット</option>
+        </select>
+      </label>
+      <label>補正値(dB)
+        <input type="number" id="off" value="90" step="1">
+      </label>
+      <button class="main" id="go" disabled>測定</button>
+    </div>
+    <p class="note">小さな差を見るコツ: 測定は10秒以上にして、同じ条件を3回以上くり返します。オルゴールとマイクの距離・向きは毎回そろえ、測定中は静かにしてください。同じ実験の間は、測定時間以外の設定(雑音のカットと補正値)を変えないでください。</p>
+  </section>
+
+  <section class="panel">
+    <h2>結果</h2>
+    <div id="results"><p class="empty">まだ測定していません。最初に「無音」を測っておくと、周りの雑音と比べられます。</p></div>
+    <div class="tools">
+      <button id="dl" disabled>CSVを保存</button>
+      <button id="cp" disabled>CSVをコピー</button>
+      <button id="clr" disabled>結果を全部消す</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const HP = { 20: '全帯域', 500: '500Hz未満カット', 1000: '1000Hz未満カット' };
+let ctx, an, buf, hp1, hp2, offset = 90, meas = null, smooth = null, baseKey = '';
+const hist = [], N = 200, results = [];
+
+const toDb = p => Math.max(0, 10 * Math.log10(Math.max(p, 1e-12)) + offset);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+$('#off').addEventListener('input', e => { const v = parseFloat(e.target.value); if (!isNaN(v)) offset = v; });
+$('#hp').addEventListener('change', setHp);
+function setHp() {
+  if (!hp1) return;
+  const f = +$('#hp').value;
+  hp1.frequency.value = f; hp2.frequency.value = f;
+}
+
+$('#start').addEventListener('click', async () => {
+  $('#err').hidden = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    hp1 = ctx.createBiquadFilter(); hp2 = ctx.createBiquadFilter();
+    [hp1, hp2].forEach(f => { f.type = 'highpass'; f.Q.value = 0.707; });
+    an = ctx.createAnalyser(); an.fftSize = 2048;
+    src.connect(hp1); hp1.connect(hp2); hp2.connect(an);
+    setHp();
+    buf = new Float32Array(an.fftSize);
+    $('#start').disabled = true;
+    $('#go').disabled = false;
+    $('#status').textContent = '測定可能';
+    setInterval(tick, 40);
+  } catch (e) {
+    const err = $('#err');
+    err.hidden = false;
+    err.textContent = 'マイクを使えません。ブラウザのマイク許可を確認し、localhost(Live Server など)かhttpsで開いてください。';
+  }
+});
+
+function tick() {
+  an.getFloatTimeDomainData(buf);
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+  const ms = s / buf.length, db = toDb(ms);
+  hist.push(db); if (hist.length > N) hist.shift();
+  smooth = smooth === null ? db : smooth + 0.15 * (db - smooth);
+  $('#now').textContent = smooth.toFixed(1);
+  if (meas) {
+    meas.sum += ms; meas.n++; meas.max = Math.max(meas.max, db);
+    const left = meas.dur - (performance.now() - meas.t0) / 1000;
+    if (left <= 0) finish(); else $('#status').textContent = '測定中… 残り ' + left.toFixed(1) + ' 秒';
+  }
+  draw();
+}
+
+$('#go').addEventListener('click', () => {
+  if (meas) return;
+  meas = { label: $('#label').value.trim() || ('条件' + (results.length + 1)),
+           dur: +$('#dur').value, hp: +$('#hp').value, t0: performance.now(), sum: 0, n: 0, max: 0 };
+  ['#go', '#hp', '#dur'].forEach(id => $(id).disabled = true);
+  $('#now').classList.add('rec');
+});
+
+function finish() {
+  results.push({ label: meas.label, hp: meas.hp, avg: toDb(meas.sum / meas.n), max: meas.max, dur: meas.dur });
+  meas = null;
+  ['#go', '#hp', '#dur'].forEach(id => $(id).disabled = false);
+  $('#now').classList.remove('rec');
+  $('#status').textContent = '測定可能';
+  render();
+}
+
+function stats(v) {
+  const n = v.length, m = v.reduce((a, b) => a + b, 0) / n;
+  const sd = n > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (n - 1)) : null;
+  return { n, m, sd };
+}
+function groups() {
+  const g = new Map();
+  results.forEach(r => {
+    const k = r.label + '|' + r.hp;
+    if (!g.has(k)) g.set(k, { k, label: r.label, hp: r.hp, v: [] });
+    g.get(k).v.push(r.avg);
+  });
+  return [...g.values()].map(x => ({ ...x, ...stats(x.v) }));
+}
+
+function render() {
+  const box = $('#results');
+  const has = results.length > 0;
+  ['#dl', '#cp', '#clr'].forEach(id => $(id).disabled = !has);
+  if (!has) {
+    box.innerHTML = '<p class="empty">まだ測定していません。最初に「無音」を測っておくと、周りの雑音と比べられます。</p>';
+    return;
+  }
+  const gs = groups();
+  if (!gs.some(g => g.k === baseKey)) baseKey = gs[0].k;
+  const base = gs.find(g => g.k === baseKey);
+  const means = gs.map(g => g.m), lo = Math.min(...means) - 2, hi = Math.max(...means) + 2;
+  const opts = gs.map(g => `<option value="${esc(g.k)}"${g.k === baseKey ? ' selected' : ''}>${esc(g.label)}(${HP[g.hp]})</option>`).join('');
+  const diff = g => {
+    if (g === base) return '基準';
+    if (g.hp !== base.hp) return '比べられません';
+    const d = g.m - base.m;
+    return (d > 0 ? '+' : '') + d.toFixed(2);
+  };
+  box.innerHTML =
+    `<p class="base"><label>基準にする条件<select id="base">${opts}</select></label></p>` +
+    '<h3>条件ごとのまとめ</h3><div class="scroll"><table><thead><tr><th>条件</th><th>雑音のカット</th><th>回数</th><th>平均 dB</th><th>ばらつき(SD)</th><th>基準との差 dB</th><th style="width:22%">大きさ(最小〜最大を拡大)</th></tr></thead><tbody>' +
+    gs.map(g => `<tr><td>${esc(g.label)}</td><td>${HP[g.hp]}</td><td class="n">${g.n}</td><td class="n">${g.m.toFixed(2)}</td><td class="n">${g.sd === null ? '–' : g.sd.toFixed(2)}</td><td class="n">${diff(g)}</td><td><div class="bar" style="width:${((g.m - lo) / (hi - lo)) * 100}%"></div></td></tr>`).join('') +
+    '</tbody></table></div><p class="note">差が「ばらつき(SD)」より小さいときは、差があるとは言い切れません。回数を増やすとSDが小さくなり、小さな差も見分けやすくなります。回数が1回の条件はSDが出せません。</p>' +
+    '<h3>測定の記録</h3><div class="scroll"><table><thead><tr><th>#</th><th>条件</th><th>雑音のカット</th><th>平均 dB</th><th>最大 dB</th><th>秒</th><th></th></tr></thead><tbody>' +
+    results.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${esc(r.label)}</td><td>${HP[r.hp]}</td><td class="n">${r.avg.toFixed(2)}</td><td class="n">${r.max.toFixed(1)}</td><td class="n">${r.dur}</td><td><button class="small" data-i="${i}">削除</button></td></tr>`).join('') +
+    '</tbody></table></div>';
+}
+
+$('#results').addEventListener('change', e => { if (e.target.id === 'base') { baseKey = e.target.value; render(); } });
+$('#results').addEventListener('click', e => {
+  const b = e.target.closest('button[data-i]');
+  if (b) { results.splice(+b.dataset.i, 1); render(); }
+});
+
+const csv = () => '条件,雑音のカット,平均dB,最大dB,測定秒\n' +
+  results.map(r => `"${r.label.replace(/"/g, '""')}",${HP[r.hp]},${r.avg.toFixed(2)},${r.max.toFixed(1)},${r.dur}`).join('\n');
+
+$('#dl').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv()], { type: 'text/csv' }));
+  a.download = 'sound-results.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+});
+$('#cp').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(csv()); $('#cp').textContent = 'コピーしました'; }
+  catch (e) { $('#cp').textContent = 'コピーできませんでした'; }
+  setTimeout(() => $('#cp').textContent = 'CSVをコピー', 1500);
+});
+$('#clr').addEventListener('click', () => { results.length = 0; render(); });
+
+function draw() {
+  const c = $('#cv'), r = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * r)) { c.width = Math.round(w * r); c.height = Math.round(h * r); }
+  const g = c.getContext('2d');
+  g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, w, h);
+  const vis = hist.length ? hist : [0];
+  let lo = Math.min(...vis) - 2, hi = Math.max(...vis) + 2;
+  if (hi - lo < 10) { const m = (hi + lo) / 2; lo = m - 5; hi = m + 5; }
+  const y = v => h - 4 - ((v - lo) / (hi - lo)) * (h - 12);
+  g.font = '11px system-ui'; g.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (hi - lo) * i / 4, yy = y(v);
+    g.strokeStyle = '#c5d0d8'; g.beginPath(); g.moveTo(30, yy); g.lineTo(w, yy); g.stroke();
+    g.fillStyle = '#53646f'; g.fillText(v.toFixed(0), 0, yy + 4);
+  }
+  g.strokeStyle = meas ? '#0f7b8a' : '#14212b'; g.lineWidth = 2; g.beginPath();
+  const step = (w - 30) / (N - 1);
+  hist.forEach((v, i) => {
+    const x = w - (hist.length - 1 - i) * step;
+    i ? g.lineTo(x, y(v)) : g.moveTo(x, y(v));
+  });
+  g.stroke();
+}
+draw();
+</script>
+</body>
+</html>
